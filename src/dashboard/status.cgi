@@ -55,7 +55,7 @@ BEGIN {
     print text
 }')
 
-BOOT=$(who -b | awk '{print $3,$4}' | xargs -I{} date -d "{}" '+%d. %B %Y, %H:%M Uhr')
+BOOT=$(who -b | awk '{print $2,$3}' | xargs -I{} date -d "{}" '+%d. %B %Y, %H:%M Uhr')
 
 OS=$(grep PRETTY_NAME /etc/os-release | cut -d'"' -f2)
 
