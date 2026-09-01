@@ -3,7 +3,7 @@
 System: `otterpi`  
 Dienst: MeshCentral  
 Version: `1.2.4`  
-Stand: 04.08.2026
+Stand: 01.09.2026
 
 ## 1. Zweck
 
@@ -123,7 +123,7 @@ echo | openssl s_client \
 Aktueller Hash:
 
 ```text
-c02a613bc7b5538ddb8161d5c76cc983152883ce272ee5f2f7e0d42adee969c4cbda3fc6778c0746040a0e07d6b50c7d
+62041685bba50191780ffdfaa4bffd2185095e8f7b00e5ea5df074c698cb47b34e782191eb325e591c10b04394caa1fb
 ```
 
 ### MeshCentral-Zertifikat
@@ -138,7 +138,7 @@ journalctl -u meshcentral \
 Aktueller Hash:
 
 ```text
-c02a613bc7b5538ddb8161d5c76cc983152883ce272ee5f2f7e0d42adee969c4cbda3fc6778c0746040a0e07d6b50c7d
+62041685bba50191780ffdfaa4bffd2185095e8f7b00e5ea5df074c698cb47b34e782191eb325e591c10b04394caa1fb
 ```
 
 Ergebnis:
@@ -161,7 +161,7 @@ host:
 "mesh.makki.route64.de"
 
 SHA384 cert hash:
-c02a613bc7b5538ddb8161d5c76cc983152883ce272ee5f2f7e0d42adee969c4cbda3fc6778c0746040a0e07d6b50c7d
+62041685bba50191780ffdfaa4bffd2185095e8f7b00e5ea5df074c698cb47b34e782191eb325e591c10b04394caa1fb
 ```
 
 ---
@@ -276,7 +276,8 @@ active
 
 Prüfintervall:
 
-ca. 10 Minuten
+- erster Lauf: ca. 10 Minuten nach Systemstart
+- danach: alle 6 Stunden
 
 Der Timer ist für den automatischen Start nach einem Systemboot eingerichtet.
 
@@ -303,7 +304,10 @@ Der Timer startet den Service beim nächsten Intervall erneut.
 
 ---
 
-## 13. Automatischer Testlauf
+## 13. Historischer automatischer Testlauf
+
+Der folgende Lauf stammt vom 04.08.2026 und dokumentiert den damaligen
+Zertifikatsstand.
 
 Beispiel eines erfolgreichen Timerlaufs:
 
@@ -359,7 +363,138 @@ Der Recovery-Test war erfolgreich.
 
 ---
 
-## 15. Split-DNS
+## 15. Realer Zertifikatsausfall und Recovery – August 2026
+
+Im August 2026 wurde der Zertifikatsmechanismus erstmals unter realen
+Fehlerbedingungen beobachtet.
+
+### Ausgangslage
+
+Der externe Zertifikatsdienst hinter `cert.makki.route64.de` war über mehrere
+Tage nicht funktionsfähig bzw. nicht erreichbar und stellte in diesem Zeitraum
+keine funktionierenden Zertifikate bereit.
+
+Beim Neustart von MeshCentral am **18.08.2026 um 09:16 Uhr** konnte das in
+`config.json` konfigurierte `certUrl`
+
+```text
+https://cert.makki.route64.de
+```
+
+daher nicht geladen werden:
+
+```text
+Failed to load web certificate at:
+"https://cert.makki.route64.de", host: "mesh.makki.route64.de"
+```
+
+MeshCentral startete trotzdem erfolgreich und blieb betriebsbereit.
+
+### Wiederherstellung des externen Dienstes
+
+Am **26.08.2026** war der externe Zertifikatsdienst wieder funktionsfähig.
+Anschließend wurde über `cert.makki.route64.de` ein neues Zertifikat
+ausgeliefert.
+
+Das zu diesem Zeitpunkt ausgelieferte Zertifikat war gültig vom:
+
+```text
+23.08.2026 00:00 GMT
+bis
+21.11.2026 23:59 GMT
+```
+
+Der dabei ermittelte SHA384-Zertifikatshash war:
+
+```text
+62041685bba50191780ffdfaa4bffd2185095e8f7b00e5ea5df074c698cb47b34e782191eb325e591c10b04394caa1fb
+```
+
+Die verwendete Zertifizierungsstelle des aktuell ausgelieferten Zertifikats
+war ZeroSSL. Die genaue interne Umstellung des externen Zertifikatsdienstes
+während der Wiederherstellung ist nicht bekannt und wird daher hier nicht
+weiter spezifiziert.
+
+### Automatisches Recovery durch MeshCentral
+
+Um **26.08.2026 11:41:57 Uhr** meldete ein Agent bereits den neuen
+Zertifikatshash:
+
+```text
+Agent bad web cert hash
+(Agent:62041685bb != Server:923520aa9a or 6f84f9b0e4)
+```
+
+Der Agent kannte damit bereits das neue Zertifikat, während MeshCentral noch
+mit dem zuvor geladenen Zertifikatszustand arbeitete.
+
+MeshCentral reagierte darauf automatisch und lud das Zertifikat erneut über
+seine konfigurierte `certUrl`:
+
+```text
+Loaded web certificate from "https://cert.makki.route64.de"
+```
+
+Anschließend wurde von MeshCentral der neue Hash protokolliert:
+
+```text
+SHA384 cert hash:
+62041685bba50191780ffdfaa4bffd2185095e8f7b00e5ea5df074c698cb47b34e782191eb325e591c10b04394caa1fb
+```
+
+Damit waren Agent, MeshCentral und das über den CDN ausgelieferte Zertifikat
+wieder synchron.
+
+Ein Neustart von MeshCentral war für diesen Zertifikatswechsel nicht
+erforderlich. Der Reload erfolgte zur Laufzeit über die vorhandene
+`certUrl`-Mechanik.
+
+### Überwachung durch den Zertifikatsmonitor
+
+Der zusätzlich eingerichtete `meshcentral-cert-check.timer` überwachte den
+Zustand weiterhin unabhängig von diesem Vorgang.
+
+Der Timer läuft alle sechs Stunden und vergleicht den über
+`cert.makki.route64.de` ausgelieferten Zertifikatshash mit dem von MeshCentral
+verwendeten Hash.
+
+Nach der Wiederherstellung meldete der Monitor wiederholt:
+
+```text
+OK: CDN und MeshCentral Zertifikat identisch
+```
+
+mit dem Hash:
+
+```text
+62041685bba50191780ffdfaa4bffd2185095e8f7b00e5ea5df074c698cb47b34e782191eb325e591c10b04394caa1fb
+```
+
+### Ergebnis
+
+Der Vorfall stellt einen realen Praxistest der Zertifikatsarchitektur dar:
+
+1. Der externe Zertifikatsdienst fiel aus.
+2. MeshCentral konnte während des Ausfalls das externe Zertifikat nicht laden.
+3. Nach der Wiederherstellung wurde ein neues Zertifikat ausgeliefert.
+4. Ein Agent erkannte den abweichenden Zertifikatszustand.
+5. MeshCentral lud das Zertifikat über `certUrl` automatisch neu.
+6. Der neue Zertifikatshash wurde übernommen.
+7. Der unabhängige Zertifikatsmonitor bestätigte anschließend dauerhaft die
+   Synchronität.
+
+Damit hat sich die vorgesehene Kombination aus externer `certUrl`-Quelle,
+MeshCentral-eigenem Zertifikats-Recovery und unabhängigem
+systemd-Zertifikatsmonitor unter realen Fehlerbedingungen bewährt.
+
+Der einzelne am 26.08.2026 protokollierte `Agent bad web cert hash` ist als
+Übergangsereignis während des Zertifikatswechsels zu betrachten. Nach dem
+automatischen Reload wurden keine weiteren entsprechenden Meldungen
+festgestellt.
+
+---
+
+## 16. Split-DNS
 
 Im LAN wird:
 
@@ -380,7 +515,7 @@ Das Split-DNS-Konzept ist Bestandteil der aktuellen Architektur.
 
 ---
 
-## 16. Warum das CDN bestehen bleibt
+## 17. Warum das CDN bestehen bleibt
 
 Das CDN bleibt für externe IPv4-Erreichbarkeit wichtig.
 
@@ -396,7 +531,7 @@ Ein direkter IPv6-Zugriff kann nicht überall vorausgesetzt werden.
 
 ---
 
-## 17. Bekannte Stolperfallen
+## 18. Bekannte Stolperfallen
 
 ### Zertifikatswechsel
 
@@ -440,7 +575,7 @@ cert.makki.route64.de
 
 ---
 
-## 18. Wiederanlauf nach Fehler
+## 19. Wiederanlauf nach Fehler
 
 ### Schritt 1 – MeshCentral prüfen
 
@@ -472,7 +607,7 @@ sudo systemctl start meshcentral-cert-check.service
 
 ---
 
-## 19. Finaler dokumentierter Zustand
+## 20. Finaler dokumentierter Zustand
 
 ```text
 MeshCentral                 OK
@@ -489,7 +624,7 @@ Recovery-Test               OK
 
 ---
 
-## 20. Ergebnis
+## 21. Ergebnis
 
 Die ursprüngliche Ursache:
 
