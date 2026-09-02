@@ -642,6 +642,35 @@ Es zeigt Systeminformationen und Diagnosewerte.
 
 Es besitzt keine Benutzerverwaltung und keine Änderungsfunktionen.
 
+### Technische Zugriffsbeschränkung
+
+Das Status-Dashboard ist über nginx auf das lokale Netzwerk beschränkt.
+
+Erlaubte Netze:
+
+    IPv4:
+    192.168.178.0/24
+
+    IPv6:
+    2a02:908:1a66:ecc0::/64
+
+Der Zugriff auf das Dashboard sowie auf `/cgi-bin/` wird für andere
+Quellnetze mit HTTP 403 verweigert.
+
+HTTP dient ausschließlich der Weiterleitung auf HTTPS sowie der
+Bereitstellung der Let's-Encrypt-HTTP-01-Challenge.
+
+Der Pfad:
+
+    /.well-known/acme-challenge/
+
+ist deshalb öffentlich erreichbar. Dort werden ausschließlich
+statische ACME-Challenge-Dateien bereitgestellt. Es erfolgt keine
+CGI- oder FastCGI-Ausführung über diesen Pfad.
+
+Das Status-Dashboard selbst bleibt von externen Netzen aus nicht
+erreichbar.
+
 ---
 
 ## 31. Sicherheitsprinzip des Dashboards

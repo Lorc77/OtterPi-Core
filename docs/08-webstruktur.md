@@ -113,7 +113,7 @@ Monitoring & IoT
 
 Adresse:
 
-http://status.makki.route64.de/
+https://status.makki.route64.de/
 
 Anzeige:
 

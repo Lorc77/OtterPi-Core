@@ -370,13 +370,27 @@ Diese Ports sind nicht Bestandteil der öffentlichen Weboberfläche.
 |---:|---|---|
 | 22 | SSH | LAN |
 | 53 | Pi-hole DNS | LAN |
-| 80 | nginx / HTTP | öffentlich |
-| 443 | nginx / HTTPS | öffentlich |
+| 80 | nginx / HTTP | öffentlich, ACME + HTTPS-Weiterleitung |
+| 443 | nginx / HTTPS | dienstabhängig |
 | 8080 | Pi-hole Webinterface | LAN |
 | 1024 | MeshCentral Redirect | intern |
 | 4430 | MeshCentral | intern |
 | 4433 | Intel AMT | intern |
 | 16989 | MeshCentral Agent | intern |
+
+Port 80 und 443 sind technisch über die Fritz!Box erreichbar.
+Die tatsächliche Zugriffskontrolle erfolgt bei den Webdiensten über
+nginx und die jeweilige Server-Konfiguration.
+
+Insbesondere:
+
+    status.makki.route64.de
+        HTTPS: LAN only
+        HTTP: ACME-Challenge öffentlich, sonst Weiterleitung auf HTTPS
+
+Das Status-Dashboard selbst ist damit nicht öffentlich erreichbar.
+
+Die tatsächliche Listener-Situation soll bei späteren Snapshots erneut geprüft werden.
 
 Die tatsächliche Listener-Situation soll bei späteren Snapshots erneut geprüft werden.
 
