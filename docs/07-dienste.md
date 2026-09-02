@@ -74,15 +74,45 @@ DNS-Auflösung und DNS-Filterung im LAN.
 
 Dienst:
 
-pihole-FTL
+`pihole-FTL`
+
+Aktueller Versionsstand:
+
+* Core: `v6.4.3`
+* Web: `v6.6`
+* FTL: `v6.7`
 
 Ports:
 
-- TCP/UDP 53
-- TCP 8080 für das Webinterface
+* TCP/UDP 53 – DNS
+* TCP 8080 – Webinterface
 
-Das Query Logging ist deaktiviert, um unnötige Schreiblast auf der
-SD-Karte zu vermeiden.
+DNS:
+
+* IPv4 und IPv6 aktiv
+* Upstream: Quad9
+* DNSSEC in Pi-hole: deaktiviert
+* EDNS0 ECS: deaktiviert
+* Query Logging: deaktiviert
+
+Upstream-Resolver:
+
+* `9.9.9.9`
+* `149.112.112.112`
+* `2620:fe::fe`
+* `2620:fe::9`
+
+Blocklisten:
+
+* StevenBlack Hosts
+* HaGeZi Multi Pro
+* HaGeZi Threat Intelligence
+
+Die Gravity-Datenbank enthält aktuell rund 2,48 Millionen Einträge.
+
+Das Query Logging ist deaktiviert, um unnötige dauerhafte Schreiblast auf der SD-Karte zu vermeiden.
+
+Unbound ist derzeit nicht installiert und nicht Bestandteil der produktiven DNS-Architektur.
 
 ## fcgiwrap
 

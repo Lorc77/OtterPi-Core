@@ -344,6 +344,42 @@ Port 8080
 
 Query Logging wurde zur Reduzierung der Schreiblast deaktiviert.
 
+Aktueller DNS-Upstream:
+
+* `9.9.9.9`
+* `149.112.112.112`
+* `2620:fe::fe`
+* `2620:fe::9`
+
+Die verwendeten Quad9-Upstreams gehören zur gefilterten Quad9-Konfiguration. ECS wird nicht verwendet; die DNSSEC-Validierung erfolgt nicht lokal durch Pi-hole.
+
+Pi-hole-Konfiguration:
+
+* DNSSEC: deaktiviert
+* EDNS0 ECS: deaktiviert
+* Query Logging: deaktiviert
+* Blocking: aktiviert
+
+Aktuelle Blocklisten:
+
+* StevenBlack Hosts
+* HaGeZi Multi Pro
+* HaGeZi Threat Intelligence
+
+Gravity:
+
+* ca. 2,48 Millionen Einträge
+
+Die produktive DNS-Kette wurde erfolgreich getestet:
+
+`LAN-Client → Pi-hole → Quad9`
+
+Dabei wurden externe DNS-Auflösung, lokale `pi.hole`-Auflösung, IPv4/IPv6 sowie Pi-hole-Blocking verifiziert.
+
+Unbound ist aktuell nicht installiert.
+
+Die Einführung eines lokalen rekursiven Resolvers wurde bewusst zurückgestellt, da die zusätzliche Komplexität aktuell keinen ausreichenden Mehrwert gegenüber dem bestehenden Quad9-Upstream bietet.
+
 ---
 
 ## 12. Nginx

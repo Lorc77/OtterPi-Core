@@ -87,16 +87,49 @@ Das Dashboard berücksichtigt trotzdem den Zustand des Interfaces und kann zwisc
 
 Auf dem OtterPi läuft Pi-hole.
 
-Pi-hole FTL stellt den lokalen DNS-Dienst bereit.
+Pi-hole FTL stellt den zentralen DNS-Dienst für das LAN bereit.
 
 DNS:
 
-- Port 53
-- primär LAN-intern
+* TCP/UDP Port 53
+* IPv4 und IPv6
+* primär LAN-intern
+
+Pi-hole verwendet Quad9 als externe Upstream-Resolver:
+
+* `9.9.9.9`
+* `149.112.112.112`
+* `2620:fe::fe`
+* `2620:fe::9`
+
+Die verwendeten Quad9-Endpunkte entsprechen der gefilterten DNSSEC-Konfiguration ohne ECS.
+
+Pi-hole selbst ist aktuell konfiguriert mit:
+
+* DNSSEC: deaktiviert
+* EDNS0 ECS: deaktiviert
+* Query Logging: deaktiviert
+
+Die Clients verwenden Pi-hole als DNS-Server.
+
+Die DNS-Funktion wurde praktisch verifiziert:
+
+* externe Namensauflösung funktioniert
+* lokale Auflösung von `pi.hole` funktioniert
+* IPv4 und IPv6 funktionieren
+* eine bekannte Testdomain wird durch Pi-hole blockiert
 
 Das Pi-hole-Webinterface läuft aktuell auf:
 
-Port 8080
+`Port 8080`
+
+### Unbound
+
+Unbound ist derzeit nicht installiert.
+
+Eine lokale rekursive DNS-Auflösung mit Unbound wurde geprüft, aber zugunsten der einfacheren Architektur mit Quad9 als Upstream zunächst nicht umgesetzt.
+
+Die Entscheidung kann bei späteren Anforderungen erneut überprüft werden.
 
 ## 7. Öffentliche Erreichbarkeit
 

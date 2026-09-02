@@ -2,7 +2,7 @@
 
 Dokumentations- und Referenzrepository für den privaten Heimserver **otterpi**.
 
-Stand: August 2026
+Stand: September 2026
 
 ## Zweck
 
@@ -47,7 +47,7 @@ Der Server betreibt unter anderem:
 
 - nginx
 - MeshCentral
-- Pi-hole FTL
+- Pi-hole FTL mit lokalem DNS- und Filterdienst
 - fcgiwrap
 - SSH
 - NetworkManager
@@ -201,6 +201,29 @@ WLAN:
 Derzeit nicht aktiv.
 
 IPv6 ist aktiviert.
+
+---
+
+# DNS
+
+Pi-hole ist der zentrale DNS-Dienst für das LAN.
+
+Die Clients verwenden Pi-hole direkt als DNS-Server. Die DNS-Auflösung wurde praktisch über IPv4 und IPv6 getestet.
+
+Pi-hole verwendet derzeit Quad9 als externe Upstream-Resolver:
+
+* 9.9.9.9
+* 149.112.112.112
+* 2620:fe::fe
+* 2620:fe::9
+
+Verwendet wird die Quad9-Konfiguration mit Filterung und DNSSEC, ohne ECS.
+
+Pi-hole Query Logging ist deaktiviert, um unnötige dauerhafte Schreiblast auf der SD-Karte zu vermeiden.
+
+Unbound ist derzeit bewusst nicht installiert. Der zusätzliche rekursive Resolver würde zusätzliche Komplexität und einen weiteren permanenten Dienst einführen, ohne für den aktuellen Einsatzzweck einen ausreichenden Mehrwert gegenüber Quad9 zu liefern.
+
+Diese Entscheidung kann bei zukünftigen Anforderungen erneut bewertet werden.
 
 ---
 

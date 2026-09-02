@@ -65,6 +65,77 @@ Internet
 Im LAN existiert zusätzlich eine interne DNS-Auflösung für MeshCentral.
 Dadurch können lokale Geräte die MeshCentral-Instanz direkt erreichen.
 
+## DNS-Architektur
+
+Pi-hole stellt den zentralen DNS-Dienst des LANs bereit.
+
+Der aktuelle Datenfluss ist:
+
+    LAN-Client
+        |
+        v
+    Fritz!Box / LAN
+        |
+        v
+    Pi-hole FTL
+    192.168.178.100:53
+        |
+        v
+    Quad9
+    9.9.9.9
+    149.112.112.112
+    2620:fe::fe
+    2620:fe::9
+
+Pi-hole übernimmt:
+
+* DNS-Anfragen der LAN-Clients
+* DNS-Filterung
+* lokalen DNS-Cache
+* lokale DNS-Einträge
+
+Quad9 übernimmt die externe rekursive DNS-Auflösung.
+
+Die verwendeten Quad9-Upstreams gehören zur gefilterten Quad9-Konfiguration. ECS wird nicht verwendet; die DNSSEC-Validierung erfolgt nicht lokal durch Pi-hole.
+
+Pi-hole verwendet aktuell:
+
+* DNSSEC: deaktiviert
+* EDNS0 ECS: deaktiviert
+* Query Logging: deaktiviert
+
+Die DNS-Funktion wurde praktisch getestet:
+
+* externe Namensauflösung über Pi-hole funktioniert
+* lokale Auflösung von `pi.hole` funktioniert
+* IPv4- und IPv6-DNS-Anfragen funktionieren
+* eine blockierte Testdomain wird durch Pi-hole geblockt
+
+## DNS-Entscheidung September 2026
+
+Der OtterPi verwendet Pi-hole als zentralen DNS-Dienst und Quad9 als
+externen Upstream-Resolver.
+
+Unbound wurde geprüft, aber zunächst bewusst nicht eingeführt.
+
+Grund:
+
+Der OtterPi soll eine kleine, übersichtliche und wartbare Appliance
+bleiben. Ein lokaler rekursiver Resolver würde einen zusätzlichen
+permanenten Dienst sowie zusätzliche Konfiguration und Wartungsaufwand
+einführen. Der daraus entstehende Nutzen ist für den aktuellen
+Einsatzzweck nicht groß genug.
+
+Die Entscheidung ist bewusst reversibel und kann bei veränderten
+Anforderungen erneut bewertet werden.
+
+ECS wurde untersucht. Die verwendeten Quad9-Endpunkte arbeiten ohne
+ECS; außerdem lieferten die getesteten Clients keine ECS-Informationen
+an Pi-hole. Daher ist EDNS0 ECS in Pi-hole deaktiviert.
+
+Der produktive Zustand wurde anschließend mit externen, lokalen und
+geblockten DNS-Anfragen über IPv4 und IPv6 verifiziert.
+
 ## Webserver
 
 Nginx übernimmt die Rolle des zentralen HTTP-/HTTPS-Einstiegspunkts.
