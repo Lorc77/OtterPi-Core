@@ -898,6 +898,19 @@ RPM
 
 ---
 
+### 13.3 GPIO17 / Tacho-Eingang
+
+Der für die Tacho-Erfassung verwendete `GPIO17` wird durch den
+systemd-Service vor dem Start von `fan_control.py` als Eingang mit
+internem Pull-up konfiguriert.
+
+Die Konfiguration erfolgt über:
+
+```text
+ExecStartPre=/usr/bin/pinctrl set 17 pu
+
+---
+
 ## 14. Statusdaten
 
 Die permanente Lüftersteuerung benötigt intern mindestens:
@@ -1242,6 +1255,17 @@ RestartSec=5
 Damit wird der Dienst nach einem unerwarteten Prozessabbruch automatisch neu gestartet.
 
 Die PWM-Initialisierung erfolgt innerhalb von `fan_control.py`, sodass die Lüftersteuerung auch dann korrekt starten kann, wenn `pwm0` nach einem Reboot zunächst nicht exportiert ist.
+
+### Ergänzung für Phase 8 – systemd-Service
+
+```text
+### 17.8.x GPIO17 Pull-up
+
+Der `pi-fan.service` konfiguriert vor dem Start der Lüftersteuerung
+den Tacho-Eingang `GPIO17` mit aktiviertem internem Pull-up:
+
+```text
+ExecStartPre=/usr/bin/pinctrl set 17 pu
 
 ---
 
