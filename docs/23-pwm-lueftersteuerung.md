@@ -13,7 +13,11 @@ Geplanter Lüfter:
 
 Status:
 
-**Hardware-PWM auf GPIO18 und Tacho-Erfassung auf GPIO17 erfolgreich verifiziert. Der angeschlossene Lüfter lässt sich per Hardware-PWM reproduzierbar in der Drehzahl verändern. Die eigentliche temperaturabhängige Regelungssoftware steht noch aus.**
+**Temperaturabhängige Lüfterregelung auf dem realen System erfolgreich implementiert und als systemd-Service eingerichtet. Die Regelung verwendet ausschließlich die CPU-Temperatur als Führungsgröße und setzt pro Temperaturstufe direkt den definierten PWM-Prozentwert. Eine RPM-Regelung findet nicht statt.**
+
+**Hardware-PWM auf GPIO18 und Tacho-Erfassung auf GPIO17 sind erfolgreich verifiziert. Die RPM-Erfassung bleibt zunächst von der eigentlichen Lüfterregelung getrennt und soll später als separate, selten abgefragte Dashboard-Funktion ergänzt werden.**
+
+Die Lüftersteuerung startet nach einem Reboot automatisch wieder über `pi-fan.service`. Die erforderliche PWM-Kanalinitialisierung bzw. der Export von `pwm0` wird durch die Software beim Start sichergestellt.
 
 ---
 
@@ -25,18 +29,20 @@ Der Lüfter soll nicht lediglich ein- und ausgeschaltet werden. Stattdessen wird
 
 Zusätzlich soll das Tacho-/RPM-Signal überwacht werden.
 
-Die geplante Lösung soll:
+Die Lösung soll:
 
 - möglichst wenig CPU-Leistung benötigen,
 - möglichst wenig RAM benötigen,
 - ohne hochfrequentes Python-Polling auskommen,
 - Linux-/Hardware-PWM verwenden,
-- die tatsächliche Lüfterdrehzahl überwachen,
-- einen möglichen Lüfterfehler erkennen,
+- die Lüfterdrehzahl ausschließlich anhand der CPU-Temperatur steuern,
+- keine konstante RPM-Regelung durchführen,
+- das Tacho-/RPM-Signal bei Bedarf separat auswerten können,
 - als systemd-Service automatisch starten,
-- Statusinformationen für das bestehende Dashboard bereitstellen.
+- nach einem Reboot die PWM-Steuerung selbstständig wieder initialisieren,
+- Statusinformationen bei Bedarf für das bestehende Dashboard bereitstellen.
 
-Die Lüftersteuerung soll als kleine, lokale und ressourcenschonende Systemkomponente umgesetzt werden.
+Die eigentliche Lüfterregelung soll bewusst klein, lokal und ressourcenschonend bleiben.
 
 ---
 
@@ -169,6 +175,26 @@ GPIO18 wurde als PWM-Ausgang ausgewählt.
 Die eigentliche PWM-Erzeugung soll durch den Linux-Kernel beziehungsweise den Hardware-PWM-Controller erfolgen.
 
 Es soll ausdrücklich kein Python-basierter Software-PWM-Mechanismus eingesetzt werden.
+
+Die PWM wird nicht verwendet, um eine bestimmte Drehzahl konstant zu halten.
+
+Der PWM-Sollwert wird direkt aus der aktuellen CPU-Temperatur und der definierten Temperaturkennlinie bestimmt.
+
+Prinzip:
+
+```text
+CPU-Temperatur
+      ↓
+Temperaturstufe
+      ↓
+definierter PWM-Wert
+      ↓
+Hardware-PWM
+      ↓
+Lüfter
+```
+
+Eine Rückkopplung über die tatsächliche RPM ist ausdrücklich nicht Bestandteil der Lüfterregelung.
 
 ---
 
@@ -360,6 +386,46 @@ Die genaue RPM-Berechnung sowie die Anzahl der Tacho-Impulse pro Umdrehung werde
 
 ---
 
+### 6.7 PWM-Initialisierung nach Reboot
+
+Auf dem realen System wurde festgestellt, dass der PWM-Kanal `pwm0` nach einem Reboot nicht automatisch als:
+
+```text
+/sys/class/pwm/pwmchip0/pwm0/
+```
+
+vorhanden sein muss.
+
+Der PWM-Controller `pwmchip0` ist vorhanden, der Kanal `pwm0` muss jedoch bei Bedarf zunächst über die Kernel-Schnittstelle exportiert werden.
+
+Die `fan_control.py` übernimmt deshalb beim Start die notwendige PWM-Initialisierung.
+
+Damit ist der Dienst unabhängig davon, ob `pwm0` bereits exportiert wurde.
+
+Der gewünschte Startablauf ist:
+
+```text
+Boot
+  ↓
+systemd startet pi-fan.service
+  ↓
+fan_control.py
+  ↓
+PWM-Controller prüfen
+  ↓
+pwm0 bei Bedarf exportieren
+  ↓
+PWM konfigurieren
+  ↓
+CPU-Temperatur lesen
+  ↓
+PWM entsprechend Temperatur setzen
+```
+
+Damit soll die Lüftersteuerung nach jedem Reboot selbstständig wieder vollständig betriebsbereit sein.
+
+---
+
 ## 7. Device Tree und Overlays
 
 Die bestehende Boot-Konfiguration enthält unter anderem:
@@ -398,77 +464,107 @@ Die heute verifizierte PWM-Funktion steht bereits ohne ein zusätzlich geladenes
 
 ## 8. Temperaturregelung
 
-Die CPU-Temperatur ist die Führungsgröße der Regelung.
+Die CPU-Temperatur ist die alleinige Führungsgröße der Regelung.
 
-Vorläufig vorgesehene Kennlinie:
+Die Lüftersteuerung verwendet eine einfache Stufenkennlinie.
+
+Für jede Temperaturstufe ist ein fester PWM-Prozentwert definiert:
 
 | CPU-Temperatur | PWM |
 |---:|---:|
 | < 40 °C | 0 % |
-| 40 °C | 20 % |
-| 50 °C | 25 % |
-| 60 °C | 35 % |
-| 65 °C | 45 % |
-| 70 °C | 60 % |
-| 75 °C | 75 % |
-| 80 °C | 90 % |
+| ab 40 °C | 20 % |
+| ab 50 °C | 25 % |
+| ab 60 °C | 35 % |
+| ab 65 °C | 45 % |
+| ab 70 °C | 60 % |
+| ab 75 °C | 75 % |
+| ab 80 °C | 90 % |
 | ≥ 85 °C | 100 % |
 
-Zwischen den definierten Punkten soll linear interpoliert werden.
+Es findet keine lineare Interpolation zwischen den Temperaturpunkten statt.
 
-Beispiele:
+Beispiel:
 
 ```text
-45 °C → 22,5 %
-55 °C → 30 %
-68 °C → ca. 54 %
-73 °C → ca. 67,5 %
-77 °C → ca. 82,5 %
+45 °C → 20 %
+55 °C → 25 %
+68 °C → 45 %
+73 °C → 60 %
+77 °C → 75 %
 ```
 
-Ab 85 °C wird unabhängig von der Kennlinie 100 % PWM gefahren.
+Der jeweils gültige PWM-Wert wird anhand der höchsten erreichten Temperaturstufe bestimmt.
 
-Die konkreten Werte gelten zunächst als Ausgangspunkt und können nach dem realen Lüftertest angepasst werden.
+Die Kennlinie ist bewusst einfach gehalten und kann direkt im `fan_control.py` angepasst werden.
+
+Die konkreten Werte können nach dem praktischen Betrieb des OtterPi verändert werden.
 
 ---
 
 ## 9. Hysterese
 
-Die Regelung soll eine Hysterese berücksichtigen.
+Die Regelung verwendet eine Hysterese, um unnötiges Umschalten zwischen benachbarten Zuständen bei kleinen Temperaturschwankungen zu vermeiden.
 
-Ziel ist, ein ständiges Ein-/Ausschalten bei Temperaturen knapp um die Einschaltgrenze zu vermeiden.
+Die Hysterese wird auf die Temperaturstufen angewendet.
 
-Vorläufig:
+Dadurch kann die Temperatur beim Abkühlen unter eine Stufengrenze fallen, ohne dass der PWM-Wert sofort wieder auf die vorherige Stufe zurückspringt.
+
+Die Hysterese ändert nicht die definierten PWM-Werte der Kennlinie.
+
+Prinzip:
 
 ```text
-Einschalten:
-ab 40 °C
-
-Ausschalten:
-unter 38 °C
+Temperatur steigt
+      ↓
+nächste PWM-Stufe wird erreicht
+      ↓
+PWM wird erhöht
 ```
 
-Die endgültigen Werte werden nach dem praktischen Verhalten des Lüfters festgelegt.
+Beim Abkühlen:
+
+```text
+Temperatur fällt
+      ↓
+Hysterese berücksichtigt
+      ↓
+PWM bleibt zunächst auf aktueller Stufe
+      ↓
+erst bei ausreichend niedriger Temperatur
+      ↓
+PWM wird reduziert
+```
+
+Die konkrete Hysterese ist im `fan_control.py` definiert und kann dort angepasst werden.
 
 ---
 
 ## 10. Tacho / RPM
 
-Der Tacho-Anschluss wird von Beginn an berücksichtigt.
+Der Tacho-Anschluss ist hardwareseitig verifiziert, gehört aber zunächst nicht zur eigentlichen Lüfterregelung.
 
-Er ist zunächst **nicht** Bestandteil der eigentlichen Temperaturregelung.
-
-Die Regelung bleibt:
+Die Regelung verwendet ausschließlich:
 
 ```text
 CPU-Temperatur
       ↓
-Temperaturkurve
+Temperaturkennlinie
       ↓
-PWM-Sollwert
-      ↓
-Lüfter
+PWM
 ```
+
+Die tatsächliche Lüfterdrehzahl wird nicht geregelt und muss keinen konstanten RPM-Wert einhalten.
+
+Das Tacho-Signal auf `GPIO17` bleibt für eine spätere RPM-Auswertung verfügbar.
+
+Die RPM-Erfassung soll bewusst von der eigentlichen Lüftersteuerung getrennt werden.
+
+Geplant ist daher eine separate, selten ausgeführte bzw. bedarfsgesteuerte RPM-Abfrage für Dashboard- oder Diagnosezwecke.
+
+Damit bleibt `fan_control.py` möglichst klein und muss keine permanente RPM-Auswertung durchführen.
+
+Die Tacho-Hardware und die Edge-Erfassung wurden bereits erfolgreich verifiziert. Die genaue RPM-Berechnung wird bei der späteren Dashboard-Funktion umgesetzt.
 
 Der Tacho dient dagegen zur Überwachung:
 
@@ -574,30 +670,31 @@ Die bisher gemessenen Frequenzen werden als Referenzwerte für die spätere RPM-
 
 ## 11. RPM-Auswertung
 
-Das Tacho-Signal soll nicht über eine hochfrequente Userspace-Polling-Schleife erfasst werden.
+Die RPM-Erfassung ist bewusst nicht Bestandteil der permanent laufenden Temperaturregelung.
 
-Die grundsätzliche Erfassungsmethode ist inzwischen verifiziert.
+`fan_control.py` benötigt für die eigentliche Regelung weder die Tacho-Flanken noch einen RPM-Sollwert.
 
-Der Tacho wird über den GPIO-Event-Mechanismus des Kernels und `libgpiod` erfasst. Für die Tests wird `gpiomon` verwendet.
+Die Tacho-Auswertung wird später als separate Funktion für seltene Dashboard- oder Diagnoseabfragen umgesetzt.
 
-Beispiel:
+Die grundlegende Edge-Erfassung ist bereits verifiziert:
 
 ```bash
 sudo gpiomon --chip gpiochip0 --edges rising --num-events 20 --localtime 17
 ```
 
-Damit ist kein hochfrequentes Userspace-Polling des GPIO-Pegels erforderlich.
+Damit ist bestätigt, dass der Lüfter ein verwertbares Tacho-Signal auf `GPIO17` liefert.
 
-Die endgültige RPM-Auswertung soll später ebenfalls ereignisbasiert erfolgen. Die Anwendung muss nicht permanent den GPIO-Zustand abfragen, sondern kann die vom Kernel gemeldeten Flanken auswerten.
+Für die spätere RPM-Abfrage sind noch festzulegen:
 
-Noch offen sind:
+- Tacho-Impulse pro Umdrehung,
+- Messdauer bzw. Anzahl der auszuwertenden Flanken,
+- Umgang mit sehr niedrigen Drehzahlen,
+- Stillstandserkennung,
+- Glättung des angezeigten RPM-Wertes.
 
-- genaue Tacho-Impulse pro Umdrehung,
-- sinnvolles Messfenster,
-- Glättung der RPM-Anzeige,
-- Verhalten bei sehr niedriger Drehzahl,
-- Verhalten bei Stillstand,
-- Anlaufphase.
+Diese Funktion wird getrennt von der eigentlichen Lüftersteuerung implementiert.
+
+Die Temperaturregelung bleibt unabhängig von der RPM-Messung.
 
 Der Tacho-GPIO ist festgelegt:
 
@@ -647,66 +744,136 @@ Linux / Hardware
           Dashboard
 ```
 
-Die CPU-Temperatur soll zunächst ungefähr alle 5 Sekunden ausgewertet werden.
+Die CPU-Temperatur wird von `fan_control.py` in einem niedrigen, festen Intervall ausgewertet.
 
-Die RPM-Auswertung soll zunächst ungefähr alle 2 Sekunden als aktualisierter Statuswert bereitgestellt werden.
+Die eigentliche PWM wird nur verändert, wenn sich der benötigte PWM-Sollwert tatsächlich ändert.
 
-Die eigentliche Flankenerfassung erfolgt dabei ereignisbasiert über die Linux-GPIO-Event-Schnittstelle und nicht durch kontinuierliches Userspace-Polling.
+Die permanente Lüftersteuerung benötigt keine RPM-Auswertung.
 
-Damit kann die spätere RPM-Erfassung auch bei hohen Drehzahlen ohne eine hochfrequente Python-Polling-Schleife umgesetzt werden.
+Das Tacho-Signal wird nicht kontinuierlich durch Python gepollt.
 
-Die endgültige Messfenster- und Auswertelogik wird nach Abschluss der RPM-Kalibrierung festgelegt.
+Eine spätere RPM-Abfrage soll separat und nur bei Bedarf bzw. in größeren Intervallen für das Dashboard erfolgen.
 
-Der PWM-Wert soll nur geändert werden, wenn tatsächlich eine relevante Änderung vorliegt.
+Damit bleibt die permanente Regelung möglichst klein:
+
+```text
+CPU-Temperatur lesen
+      ↓
+PWM-Stufe bestimmen
+      ↓
+nur bei Änderung PWM aktualisieren
+      ↓
+warten
+      ↓
+wiederholen
+```
+
+Es werden keine permanenten RPM-Berechnungen, keine hochfrequenten GPIO-Abfragen und keine unnötigen Netzwerk- oder Logging-Aktivitäten durchgeführt.
 
 ---
 
 ## 13. Softwarearchitektur
 
-Ein kleiner Userspace-Dienst soll später folgende Aufgaben übernehmen:
+Die permanente Lüftersteuerung wird durch einen kleinen Userspace-Dienst umgesetzt.
 
+`fan_control.py` übernimmt ausschließlich die für die automatische Regelung erforderlichen Aufgaben:
+
+- PWM-Kanal bei Bedarf initialisieren,
 - CPU-Temperatur lesen,
-- Temperatur → PWM berechnen,
-- PWM aktualisieren,
-- RPM erfassen,
-- Lüfterstatus bestimmen,
-- Fehlerzustände erkennen,
-- Statusdaten für das Dashboard bereitstellen.
+- Temperaturstufe bestimmen,
+- PWM-Sollwert setzen,
+- Hysterese berücksichtigen,
+- PWM beim Beenden sicher auf 0 % setzen.
 
-Der Dienst soll über systemd gestartet werden.
+Die eigentliche Lüfterdrehzahl wird nicht über RPM geregelt.
 
-Geplanter Service:
+Die RPM-Erfassung wird später als separate Funktion für Dashboard- bzw. Diagnoseabfragen umgesetzt.
+
+Der Dienst wird über systemd gestartet:
 
 ```text
 pi-fan.service
 ```
 
-Geplanter Statusaufruf:
+Die Software liegt im Repository unter:
 
-```bash
-systemctl status pi-fan.service
+```text
+src/utilities/fan_control.py
 ```
 
-Geplanter automatischer Start:
+Auf dem laufenden System wird sie derzeit unter:
 
-```bash
-systemctl enable --now pi-fan.service
+```text
+/home/makki/fan_control.py
 ```
 
-Die Software wird erst nach Abschluss der Hardwaretests implementiert.
+ausgeführt.
+
+Der systemd-Service startet die Lüftersteuerung automatisch beim Systemstart und startet sie bei einem unerwarteten Prozessabbruch erneut.
+
+---
+
+## 13.1 Logging
+
+`fan_control.py` erzeugt im normalen Betrieb keine Logausgaben.
+
+Die früher vorhandenen `print()`-Ausgaben wurden bewusst nur auskommentiert und nicht gelöscht, damit sie bei späterem Debugging bei Bedarf wieder aktiviert werden können.
+
+Auch der systemd-Service ist so konfiguriert, dass die Standardausgabe und Standardfehlerausgabe nicht in das Journal geschrieben werden.
+
+Damit entstehen durch die permanente Lüftersteuerung keine fortlaufenden Journal-Einträge.
+
+Das reduziert sowohl unnötige I/O-Aktivität als auch die Schreiblast des Systems.
+
+Für die normale Temperaturregelung ist daher kein dauerhaftes Logging vorgesehen.
+
+---
+
+## 13.2 Repository und Deployment
+
+Die Quellversion der Lüftersteuerung befindet sich im Repository unter:
+
+```text
+src/utilities/fan_control.py
+```
+
+Auf dem OtterPi wird die aktuell verwendete Version unter:
+
+```text
+/home/makki/fan_control.py
+```
+
+ausgeführt.
+
+Der systemd-Service verwendet derzeit direkt diese lokale Datei:
+
+```text
+/usr/bin/python3 /home/makki/fan_control.py
+```
+
+Damit ist zwischen Repository-Quelle und auf dem Gerät ausgeführter Datei zu unterscheiden.
 
 ---
 
 ## 14. Statusdaten
 
-Der Lüfterdienst soll mindestens folgende Werte bereitstellen:
+Die permanente Lüftersteuerung benötigt intern mindestens:
 
 ```text
 cpu_temperature
 fan_pwm_percent
+```
+
+Eine spätere RPM-Abfrage kann zusätzlich liefern:
+
+```text
 fan_rpm
 fan_status
 ```
+
+Die RPM-/Fehlerbewertung ist bewusst von der Temperaturregelung getrennt.
+
+Damit kann die eigentliche Lüftersteuerung auch dann vollständig funktionieren, wenn keine RPM-Auswertung aktiv ist.
 
 Beispiel:
 
@@ -934,21 +1101,31 @@ Noch offen:
 
 ### Phase 6 – Temperaturregelung
 
-Kennlinie implementieren:
+**Erledigt.**
+
+Die temperaturabhängige Regelung ist implementiert.
+
+Die Regelung verwendet eine einfache Stufenkennlinie ohne Interpolation.
+
+Die CPU-Temperatur bestimmt direkt den PWM-Sollwert.
+
+Die Hysterese ist Bestandteil der Regelungslogik.
+
+Die Regelung wurde im laufenden Betrieb erfolgreich getestet.
+
+Beispiel:
 
 ```text
-<40 °C       0 %
-40 °C       20 %
-50 °C       25 %
-60 °C       35 %
-65 °C       45 %
-70 °C       60 %
-75 °C       75 %
-80 °C       90 %
-≥85 °C     100 %
+CPU-Temperatur
+      ↓
+Temperaturstufe
+      ↓
+PWM-Prozentwert
+      ↓
+Hardware-PWM GPIO18
 ```
 
-Lineare Interpolation zwischen den Punkten.
+Die Kennlinie kann direkt im `fan_control.py` angepasst werden.
 
 ---
 
@@ -969,15 +1146,40 @@ Zusätzlich kann später ein ungewöhnlich niedriger RPM-Wert bei hohem PWM-Soll
 
 ---
 
-### Phase 8 – systemd
+### Phase 8 – systemd-Service
 
-Erst nach erfolgreichem manuellen Test:
+Die Lüftersteuerung läuft als:
 
 ```text
 pi-fan.service
 ```
 
-installieren und aktivieren.
+Der Service ist auf dem OtterPi eingerichtet und aktiviert.
+
+Status:
+
+```bash
+systemctl status pi-fan.service
+```
+
+Der automatische Start ist aktiviert:
+
+```bash
+systemctl is-enabled pi-fan.service
+```
+
+Bei einem normalen Systemstart wird die Lüftersteuerung automatisch gestartet.
+
+Der Service verwendet:
+
+```text
+Restart=on-failure
+RestartSec=5
+```
+
+Damit wird der Dienst nach einem unerwarteten Prozessabbruch automatisch neu gestartet.
+
+Die PWM-Initialisierung erfolgt innerhalb von `fan_control.py`, sodass die Lüftersteuerung auch dann korrekt starten kann, wenn `pwm0` nach einem Reboot zunächst nicht exportiert ist.
 
 ---
 
@@ -1002,43 +1204,48 @@ Dabei soll möglichst keine zusätzliche permanente Infrastruktur entstehen.
 
 Zum aktuellen Stand sind folgende Punkte noch offen:
 
-1. endgültige PWM-Minimaldrehzahl bestimmen,
-2. tatsächliche Drehzahlkurve über den gesamten PWM-Bereich dokumentieren,
-3. Tacho-Impulse pro Umdrehung eindeutig festlegen,
+1. endgültige PWM-Kennlinie nach längerem Praxisbetrieb beurteilen,
+2. sinnvollen minimalen Dauerbetriebswert festlegen,
+3. Tacho-Impulse pro Umdrehung eindeutig bestimmen,
 4. Frequenz → RPM kalibrieren,
-5. sinnvolles RPM-Messfenster festlegen,
-6. Anlaufverhalten und Anlaufverzögerung bestimmen,
-7. endgültige Hysterese festlegen,
-8. endgültige Fehlerlogik festlegen,
-9. Implementierung des Userspace-Dienstes,
-10. systemd-Service,
-11. Dashboard-Schnittstelle.
+5. separate RPM-Abfrage implementieren,
+6. RPM-Anzeige für das Dashboard bereitstellen,
+7. sinnvolle Anlauf- und Stillstandserkennung für die spätere RPM-Auswertung festlegen,
+8. Dashboard-Integration der RPM-/Statusdaten.
 
-Bereits verifiziert sind:
+Bereits verifiziert bzw. umgesetzt sind:
 
 - Hardware-PWM auf GPIO18,
 - 25-kHz-PWM,
 - Lüfter-Drehzahländerung über den PWM-Duty-Cycle,
-- Tacho-Signal des Lüfters,
-- Tacho-Erfassung über GPIO17,
-- Kernel-/libgpiod-basierte Flankenerfassung ohne GPIO-Polling.
+- Tacho-Signal auf GPIO17,
+- Tacho-Erfassung über libgpiod,
+- temperaturabhängige Lüfterregelung,
+- einfache Stufenkennlinie ohne Interpolation,
+- Hysterese,
+- PWM-Initialisierung nach Bedarf,
+- automatischer Start über systemd,
+- automatischer Neustart des Dienstes bei Fehler,
+- Abschalten des Lüfters beim regulären Beenden,
+- keine permanenten Logausgaben,
+- keine RPM-Rückkopplung in der Temperaturregelung.
 
 ---
 
 ## 19. Bewusst noch nicht umgesetzt
 
-Bis zum Abschluss der Hardwaretests werden keine weiteren dauerhaften Änderungen vorgenommen.
+Folgende Funktionen bleiben bewusst außerhalb der permanenten Lüftersteuerung:
 
-Insbesondere:
+- RPM-Regelung,
+- konstante RPM-Sollwerte,
+- permanente RPM-Auswertung,
+- hochfrequentes GPIO-Polling,
+- zusätzlicher Monitoring-Stack,
+- separater MQTT-Broker ausschließlich für die Lüftersteuerung.
 
-- keine zusätzliche Device-Tree-Konfiguration auf Verdacht,
-- keine weiteren PWM-Overlays ohne konkreten Bedarf,
-- keine Software-PWM-Lösung,
-- keine RPi.GPIO-/wiringPi-Lösung,
-- kein systemd-Service,
-- keine endgültige Lüfterregelungssoftware.
+Die RPM-Erfassung wird später als separate, ressourcenschonende Funktion für Dashboard- und Diagnosezwecke ergänzt.
 
-Die bereits erfolgreich verifizierte Kernel-PWM-Konfiguration und die funktionierende GPIO17-Tacho-Erfassung bleiben zunächst die technische Grundlage für die weitere Implementierung.
+Die eigentliche Lüfterregelung bleibt bewusst auf die CPU-Temperatur als Führungsgröße beschränkt.
 
 ---
 
@@ -1086,10 +1293,10 @@ Folgende Entscheidungen sind festgelegt:
     Linux GPIO Event API / libgpiod
 
 14. Tacho-Funktion:
-    zunächst Monitoring, nicht Regelgröße
+    Monitoring / spätere separate RPM-Abfrage
 
 15. Temperatur:
-    Führungsgröße der Regelung
+    alleinige Führungsgröße der Regelung
 
 16. Temperaturbereich:
     zunächst 40–85 °C
@@ -1104,33 +1311,43 @@ Folgende Entscheidungen sind festgelegt:
     `libgpiod / gpiomon`
 
 20. Tacho-Auswertung:
-    ereignisbasiert, kein hochfrequentes GPIO-Polling
+    ereignisbasiert, später separat
 
 21. RPM:
-    noch nicht endgültig kalibriert
+    nicht Bestandteil der Temperaturregelung
 
 22. Ressourcenverbrauch:
     so gering wie praktisch möglich
 
 23. Regelungsintervall:
-    zunächst ca. 5 Sekunden
+    ca. 5 Sekunden
 
 24. RPM-Statusaktualisierung:
-    zunächst ca. 2 Sekunden
+    nicht Bestandteil des permanenten Regelungsdienstes
 
 25. Automatischer Start:
-    systemd
+    `systemd / pi-fan.service`
 
-26. Dashboard:
-    maschinenlesbare Statusdaten
+26. PWM-Initialisierung:
+    beim Start des Dienstes, `pwm0` bei Bedarf exportieren
+
+27. Logging:
+    im normalen Betrieb deaktiviert
+
+28. Temperaturkennlinie:
+    feste Stufenwerte, keine Interpolation
+
+29. PWM-Regelung:
+    kein RPM-Regelkreis
+
+30. Dashboard:
+    RPM später über separate Status-/Abfragefunktion
 
 ---
 
 ## 21. Wiedereinstieg
 
-Der Hardwaretest des Lüfters ist abgeschlossen.
-
-Der nächste Arbeitsschritt ist die Vervollständigung der Tacho-/RPM-Kalibrierung.
+Die eigentliche temperaturabhängige Lüftersteuerung ist inzwischen implementiert und läuft als systemd-Service.
 
 Aktueller Stand:
 
@@ -1147,49 +1364,43 @@ Tacho auf GPIO17               ✓
       ↓
 Tacho-Flanken erfassen         ✓
       ↓
-Tacho-Frequenz messen          ✓
+Temperaturregelung             ✓
       ↓
-Frequenz → RPM kalibrieren     offen
+Stufenkennlinie                ✓
       ↓
-Temperaturregelung             offen
+Hysterese                      ✓
       ↓
-Fehlererkennung                offen
+PWM-Initialisierung            ✓
       ↓
-systemd                        offen
+systemd-Service                ✓
       ↓
-Dashboard                      offen
+automatischer Start            ✓
+      ↓
+RPM-Kalibrierung               offen
+      ↓
+separate RPM-Abfrage           offen
+      ↓
+Dashboard-Integration          offen
 ```
 
-Der zentrale aktuelle Hardwarebefund lautet:
+Die permanente Regelung arbeitet nach folgendem Prinzip:
 
 ```text
-Raspberry Pi 4
+CPU-Temperatur
       ↓
-Linux 6.18.39+rpt-rpi-v8
+Temperaturstufe
       ↓
-PWM-Controller pwmchip0
+definierter PWM-Prozentwert
       ↓
-PWM-Kanal pwm0
+pwmchip0 / pwm0
       ↓
-GPIO18 / PWM0_0
+GPIO18
       ↓
-25 kHz Hardware-PWM
-      ↓
-Lüfter-Drehzahl regelbar
-
-Lüfter Tacho
-      ↓
-GPIO17 / Pin 11
-      ↓
-gpiochip0 / Offset 17
-      ↓
-libgpiod / gpiomon
-      ↓
-regelmäßige Tacho-Flanken
-      ↓
-RPM-Kalibrierung noch offen
+Lüfter
 ```
 
-Damit sind inzwischen sowohl die eigentliche Hardware-PWM-Steuerung als auch die grundlegende Tacho-Erfassung auf dem realen OtterPi-System verifiziert.
+Die RPM wird dabei nicht als Regelgröße verwendet.
 
-Der nächste praktische Schritt ist nicht mehr die Suche nach einem geeigneten GPIO, sondern die saubere Kalibrierung der Tacho-Frequenz zu einer tatsächlichen RPM-Anzeige.
+Die Tacho-Erfassung auf GPIO17 bleibt für eine spätere separate RPM-/Dashboard-Funktion verfügbar.
+
+Der aktuelle praktische nächste Schritt ist daher die saubere RPM-Kalibrierung und anschließend die Implementierung einer davon getrennten RPM-Abfrage.
