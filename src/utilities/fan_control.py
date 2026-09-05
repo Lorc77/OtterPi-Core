@@ -57,11 +57,11 @@ def main():
     pwm = 0
     set_pwm(0)
 
-   # print("OtterPi Lüftersteuerung gestartet")
-   # print("PWM: GPIO18 / 25 kHz")
-   # print("Kennlinie: 45 °C / 20 % bis 85 °C / 100 %")
-   # print("Hysterese: 3 °C")
-   # print()
+    # print("OtterPi Lüftersteuerung gestartet")
+    # print("PWM: GPIO18 / 25 kHz")
+    # print("Kennlinie: 45 °C / 20 % bis 85 °C / 100 %")
+    # print("Hysterese: 3 °C")
+    # print()
 
     try:
         while True:
@@ -103,12 +103,12 @@ def main():
 
                     break
 
-           # print(f"CPU: {temp:.1f} °C  |  Lüfter: {pwm} %")
+            # print(f"CPU: {temp:.1f} °C  |  Lüfter: {pwm} %")
 
             time.sleep(INTERVAL)
 
     except KeyboardInterrupt:
-        #print("\nBeendet.")
+        # print("\nBeendet.")
         pass
 
     finally:
@@ -118,7 +118,7 @@ def main():
         except OSError:
             pass
 
-        #print("Lüfter: 0 %")
+        # print("Lüfter: 0 %")
 
 
 if __name__ == "__main__":
